@@ -17,7 +17,7 @@ format:
     documentclass: scrreprt
     classoption: ["oneside", "open=any"]
     number-sections: true
-    titlepage-footer: "**Nelson TRELLES** \\newline  Chuirugie viscérale -- Hôpital NOVO (Site Pontoise)\\newline \\newline Imapct de l'évolution des recommandations des nouvelles chimiotérapies dans le pronostic de l'adénocarinome du pancréas\\newline Étude rétrospective sur registre\\newline \\today"
+    titlepage-footer: "**Dr Nelson TRELLES** \\newline  Chuirugie viscérale -- Hôpital NOVO (Site Pontoise)\\newline \\newline Imapct de l'évolution des recommandations des nouvelles chimiotérapies dans le pronostic de l'adénocarinome du pancréas\\newline Étude rétrospective sur registre\\newline \\today"
 titlepage-theme:
     title-fontstyle: ["Huge", "bfseries"]
     title-color: novo
@@ -60,7 +60,7 @@ license: "MIT"
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, cache = FALSE) 
-expx <- FALSE
+expx <- TRUE
 classeur <- "pancreask.xls"
 ```
 
@@ -73,7 +73,7 @@ library(survival)
 library(janitor)
 library(corrplot)
 library(lubridate)
-library(missMDA)
+library(Rcpp)
 library(tidyverse)
 library(lubridate)
 library(labelled)
@@ -87,6 +87,8 @@ library(visdat)
 library(gtsummary)
 library(FactoMineR)
 library(factoextra)
+#
+# Écrivons les chiffres en français
 #
 theme_gtsummary_language(language = "fr", decimal.mark = ",", big.mark = " ")
 ```
@@ -271,12 +273,12 @@ tt |>
     modify_header(label ~ " ") %>%
   bold_labels() |> 
   add_n() |> 
-  pexptabph(lg = TRUE, exp = expx, nomfich = classeur, nomsheet = "descpat")
+  pexptabph(lg = TRUE, exp = expx, nomfich = classeur, nomsheet = "desctt")
 ```
 
 \clearpage
 
-## Patients chirurgicaux vs non chirurgicaux
+# Patients chirurgicaux vs non chirurgicaux
 
 ```{r}
 #| label: tabchirnonchir
@@ -285,13 +287,14 @@ tt |>
 
 ff <- Surv(tt$suivi, tt$dcd)
 ffx <- survfit(ff ~ chir , data = tt)
+fflr <- survdiff(ff ~ chir , data = tt)
 
 coxph(ff ~ chir , data = tt) |> 
     tbl_regression(exponentiate = TRUE) |> 
   modify_header(label ~ " ") %>%
   bold_labels() |> 
   bold_p() |> 
-  pexptabph(lg = TRUE, exp = expx, nomfich = classeur, nomsheet = "coxchir2")
+  pexptabph(lg = TRUE, exp = expx, nomfich = classeur, nomsheet = "coxchirnchir")
 ```
 
 ```{r}
@@ -303,7 +306,8 @@ ggsurvplot(
   ffx,
   data = tt,
   palette = "lancet",
-  test.for.trend = TRUE,
+  pval = TRUE,
+  pval.coord = c(36,0.75),
   ggtheme = theme_light(),
   title = "Patients chirurgicaux vs non chirurgicaux",
   subtitle = "Courbe de survie",
@@ -321,10 +325,10 @@ ggsurvplot(
   xlim = c(0,60),
  tables.height = 0.2,
  tables.theme = theme_cleantable()
-) 
+)
 ```
 
-##  patients chirurgicaux
+#  patients chirurgicaux
 
 `r nrow(tta)` patients ont été opérés soit `r round(100*nrow(tta)/nrow(tt),1)`%  de la population.
 
@@ -369,6 +373,8 @@ survfit(ff ~ chim , data = tta) |>
   ggsurvplot(
     data = tta,
     palette = "lancet",
+    pval = TRUE,
+    pval.coord = c(36,0.75),
     test.for.trend = TRUE,
     ggtheme = theme_light(),
     title = "Patients chirurgicaux",
@@ -382,9 +388,8 @@ survfit(ff ~ chim , data = tta) |>
     xlab = "mois",
     ylab = "Survie (%)",
     break.x.by = 6,
-    xlim = c(0, 48),
     risk.table = TRUE,
- tables.height = 0.2,
+ tables.height = 0.25,
  tables.theme = theme_cleantable()
   ) 
 ```
@@ -396,6 +401,7 @@ La comparaison est faite pour chaque item vs `Aucune chimiothérapie` mais le gr
 ```{r}
 #| label: coxchirfig1
 #| tbl-cap: Survie des patients chirurgicaux - 5FU vs GEMZAR
+#| fig-asp: 1
 
 ttx <- tta |> 
   dplyr::filter(chim %in% c("5FU","GEMZAR")) |> 
@@ -409,12 +415,13 @@ survfit(ff ~ chim , data = ttx) |>
   ggsurvplot(
     data = ttx,
     palette = "lancet",
-    test.for.trend = TRUE,
     ggtheme = theme_light(),
     title = "Patients chirurgicaux - 5FU vs GEMZAR",
     subtitle = "Courbes de survie",
     legend.title = "Traitement ",
     legend.labs = levels(ttx$chim),
+    pval = TRUE,
+    pval.coord = c(36,0.75),
     risk.table.title = "n",
     surv.median.line = "hv",
     conf.int = TRUE,
@@ -428,7 +435,6 @@ survfit(ff ~ chim , data = ttx) |>
   ) 
 ```
 
-On compare ensuite `5FU` & `GEMZAR`.
 
 ```{r}
 #| label: coxchir2
@@ -441,14 +447,14 @@ coxph(ff ~ chim , data = ttx) |>
   modify_header(label ~ " ") %>%
   bold_labels() |> 
   bold_p() |> 
-  pexptabph(lg = TRUE, exp = expx, nomfich = classeur, nomsheet = "coxchir2")
+  pexptabph(lg = TRUE, exp = expx, nomfich = classeur, nomsheet = "chir5fugemz")
 ```
 
 
 
-IL n'y a pas de différence significative entre `5FU` & `GEMZAR` pour la survie dans cet échantillon.
+Il y a une différence significative entre `5FU` & `GEMZAR` pour la survie dans cet échantillon.
 
-### Analyse multivariée
+## Analyse multivariée
 
 On réalise une recherche de facteurs pronostics en incluant : 
 
@@ -476,16 +482,19 @@ coxph(ff ~ tranche.age + meta + grade + ganglions.envahis ,data = ttx) |> tbl_re
 ```{r}
 #| label: metachir3
 #| tbl-cap: Survie des patients chirurgicaux - Métastases
+#| fig-asp: 1
+
 survfit(ff ~ meta  , data = ttx) |>
   ggsurvplot(
     data = ttx,
     palette = "lancet",
-    test.for.trend = TRUE,
     ggtheme = theme_light(),
     title = "Patients chirurgicaux",
     subtitle = "Courbe de survie",
     legend.title = "Présence de métastase",
     legend.labs = c("Non", "Oui"),
+    pval = TRUE,
+    pval.coord = c(36,0.75),
     risk.table.title = "n",
     surv.median.line = "hv",
     conf.int = TRUE,
@@ -503,11 +512,14 @@ survfit(ff ~ meta  , data = ttx) |>
 ```{r}
 #| label: gradechir3
 #| tbl-cap: Survie des patients chirurgicaux - grade histologique
+#| fig-asp: 1
+
 survfit(ff ~ grade  , data = ttx) |> 
   ggsurvplot(
     data = ttx,
     palette = "lancet",
-    test.for.trend = TRUE,
+    pval = TRUE,
+    pval.coord = c(36,0.75),
     ggtheme = theme_light(),
     title = "Patients chirurgicaux",
     subtitle = "Courbe de survie",
@@ -525,9 +537,11 @@ survfit(ff ~ grade  , data = ttx) |>
  tables.height = 0.2,
  tables.theme = theme_cleantable()
   )
+```
+
 \clearpage
 
-## Patients non chirurgicaux
+# Patients non chirurgicaux
 
 ```{r}
 #| label: pal
@@ -556,7 +570,8 @@ ggsurvplot(
   ffx,
   data = ttb,
   palette = "lancet",
-  test.for.trend = TRUE,
+  pval = TRUE,
+  pval.coord = c(36,0.75),
   ggtheme = theme_light(),
   title = "Patients non chirurgicaux",
   subtitle = "Courbe de survie",
@@ -568,15 +583,14 @@ ggsurvplot(
   xlab = "mois",
   ylab = "Survie (%)",
   break.x.by = 12,
-  xlim = c(0, 120),
-      risk.table = TRUE,
+  risk.table = TRUE,
  tables.height = 0.2,
  tables.theme = theme_cleantable()
 ) 
 ```
 
 
-### Analyse multivariée
+## Analyse multivariée
 
 On réalise une recherche de facteurs pronostics en incluant : 
 
@@ -590,6 +604,7 @@ Les items T & N de la classification TNM n'a pas été retenus dans le modèle f
 ```{r}
 #| label: coxnchir3
 #| tbl-cap: Survie des patients non chirurgicaux  - Facteurs de risque
+#| fig-asp: 1
 
 ttb <- ttb |> 
   mutate(meta = if_else(metastase == "non", "Non", "Oui" ))
@@ -605,11 +620,14 @@ coxph(ff ~ tranche.age + meta + grade + ganglions.envahis,  data = ttb) |>
 ```{r}
 #| label: metanchir3
 #| tbl-cap: Survie des patients non chirurgicaux - Métastases
+#| fig-asp: 1
+
 survfit(ff ~ meta  , data = ttb) |>
   ggsurvplot(
     data = ttb,
     palette = "lancet",
-    test.for.trend = TRUE,
+    pval = TRUE,
+    pval.coord = c(36,0.75),
     ggtheme = theme_light(),
     title = "Patients non chirurgicaux",
     subtitle = "Courbe de survie",
@@ -628,8 +646,10 @@ survfit(ff ~ meta  , data = ttb) |>
  tables.theme = theme_cleantable()
   )
 ```
-## Technique
+# Technique
+Dans les tableaux descriptifs les données discrètes ont été présentées en pourcentage. Les données numériques ont été présentées par leur moyenne. 
 
+La survie a été étudiée sur un intervalle de cinq ans après le diagnostic. Les courbes ont été tracées par la méthode de Kaplan-Meyer. Les comparaisons deux à deux ont été analysées par la méthode du Log-Rank puis une analyse en régression par la méthode de Cox a été réalisée.
 
 L'analyse statistique a été réalisée avec le logiciel **R** [@rstat] & diverses librairies en particulier celles du `tidyverse` [@tidy] & `baseph` [@baseph].
 
