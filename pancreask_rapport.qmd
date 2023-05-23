@@ -1,6 +1,6 @@
 ---
 title: "Cancer du Pancréas"
-subtitle: "Rapport statistique -- v1.0"
+subtitle: "Rapport statistique -- v1.1"
 author: 
     - name: "Dr Philippe MICHEL"
       affiliations:
@@ -17,7 +17,7 @@ format:
     documentclass: scrreprt
     classoption: ["oneside", "open=any"]
     number-sections: true
-    titlepage-footer: "**Dr Nelson TRELLES** \\newline  Chuirugie viscérale -- Hôpital NOVO (Site Pontoise)\\newline \\newline Imapct de l'évolution des recommandations des nouvelles chimiotérapies dans le pronostic de l'adénocarinome du pancréas\\newline Étude rétrospective sur registre\\newline \\today"
+    titlepage-footer: "**Dr Nelson TRELLES** \\newline  Chirurgie viscérale -- Hôpital NOVO (Site Pontoise)\\newline \\newline Imapct de l'évolution des recommandations des nouvelles chimiotérapies dans le pronostic de l'adénocarinome du pancréas\\newline Étude rétrospective sur registre\\newline \\today"
 titlepage-theme:
     title-fontstyle: ["Huge", "bfseries"]
     title-color: novo
@@ -61,7 +61,7 @@ license: "MIT"
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, cache = FALSE) 
 expx <- TRUE
-classeur <- "pancreask.xls"
+classeur <- "pancreask2.xls"
 ```
 
 ```{r}
@@ -176,7 +176,7 @@ En raison du faible nombre de patient passé ce cap, tous les calculs & graphiqu
 dchim <- c("10/11/2001", "17/01/2007","20/12/2018")
 dchim <- dmy(dchim)
 tta <- tt |> 
-  dplyr::filter(suivi <61) |> 
+  dplyr::filter(chir  == "oui") |> 
   mutate(chim = "FOLFIRINOX")
 zz <- which(tta$date.de.diagnostic < dchim[3])
 tta$chim[zz] <-  "GEMZAR"
@@ -194,11 +194,15 @@ var_label(tta$chim) <-"Chimiothérapie"
 
 ```{r}
 #| label: groupnchir
-dchim <- c("10/11/2001", "17/01/2007","20/12/2018")
-dchim <- dmy(dchim)
+dchim <- dmy("01/01/2010")
 ttb <- tt |> 
-  dplyr::filter(suivi <61) |> 
-  dplyr::filter(date.de.diagnostic > "2010/01/01") 
+  dplyr::filter(chir  != "oui") |> 
+  mutate(chim = as.factor(if_else(date.de.diagnostic > dchim,"2010 et après", "avant 2010")))
+  ## Réordonnancement de ttb$chim
+ttb$chim <- ttb$chim %>%
+  fct_relevel(
+    "avant 2010", "2010 et après"
+  )
 
 ```
 
@@ -298,6 +302,26 @@ coxph(ff ~ chir , data = tt) |>
 ```
 
 ```{r}
+#| label: chirnonchir
+#| tbl-cap: patients chirurgicaux vs non chirurgicaux
+
+tt |>
+  dplyr::select(3,4, 8:17,19:24,26,30,31) |>
+  tbl_summary(missing = "no", by = "chir") |>
+  modify_header(label ~ " ") |>
+  bold_labels() |>
+  add_n() |>
+  add_p() |> 
+  bold_p() |> 
+  gexptabph(
+    lg = TRUE,
+    exp = expx,
+    nomfich = classeur,
+    nomsheet = "chirnonchir"
+  )
+```
+
+```{r}
 #| label: figchirnonchir
 #| fig-cap: Courbe de survie -- Patients  chirurgicaux ou non
 #| fig-asp: 1
@@ -313,7 +337,7 @@ ggsurvplot(
   subtitle = "Courbe de survie",
   surv.median.line = "hv",
   conf.int = TRUE,
-  legend.labs = c("Chirurgical","Non chirurgical"),
+  legend.labs = c("Non chirurgical","Chirurgical"),
   legend = "top",
   legend.title = "Traitement ",
   risk.table.title = "n",
@@ -330,8 +354,40 @@ ggsurvplot(
 
 #  patients chirurgicaux
 
-`r nrow(tta)` patients ont été opérés soit `r round(100*nrow(tta)/nrow(tt),1)`%  de la population.
+`r nrow(tta)` patients ont été opérés soit `r round(100*nrow(tta)/nrow(tt),1)`%  de la population. La répartition entre les différentes chimiothérapies adjuvantes (définies par la période) est de : 
 
+```{r}
+#| label: tabchimchir
+#| tbl-cap: Chimiothérapies néoadjuvantes
+zz <- table(tta$chim)
+aa <- round(prop.table(zz)*100,1)
+zz <- cbind(zz,aa)
+colnames(zz) <- c("n","%")
+kbl(zz, booktabs = T) |> 
+  kable_styling(latex_options = c("HOLD_position"))
+```
+
+```{r}
+#| label: chirdesc
+#| tbl-cap: patients chirurgicaux
+
+tta |>
+  dplyr::select(3,4, 8:31,34) |>
+  tbl_summary(missing = "no", by = chim) |>
+  modify_header(label ~ " ") |>
+  bold_labels() |>
+  add_n() |>
+  add_p() |> 
+  bold_p() |> 
+  pexptabph(
+    lg = TRUE,
+    exp = expx,
+    nomfich = classeur,
+    nomsheet = "chirdesc"
+  ) |> 
+  kable_styling(font_size = 8) |> 
+  landscape()
+```
 
 ```{r}
 #| label: courbe1
@@ -342,7 +398,7 @@ ff <- Surv(tta$suivi, tta$dcd)
 ffx <- survfit(ff ~ 1 , data = tta)
 ggsurvplot(
   ffx,
-  data = tt,
+  data = tta,
   palette = "lancet",
   test.for.trend = TRUE,
   ggtheme = theme_light(),
@@ -357,6 +413,7 @@ ggsurvplot(
   legend = "none",
   risk.table.title = "n",
   break.x.by = 12,
+  xlim = c(0,60),
       risk.table = TRUE,
  tables.height = 0.15,
  tables.theme = theme_cleantable()
@@ -388,6 +445,7 @@ survfit(ff ~ chim , data = tta) |>
     xlab = "mois",
     ylab = "Survie (%)",
     break.x.by = 6,
+    xlim = c(0,60),
     risk.table = TRUE,
  tables.height = 0.25,
  tables.theme = theme_cleantable()
@@ -442,7 +500,7 @@ survfit(ff ~ chim , data = ttx) |>
 
 
 
-coxph(ff ~ chim , data = ttx) |> 
+coxph( Surv(ttx$suivi, ttx$dcd)~ chim , data = ttx) |> 
   tbl_regression(exponentiate = TRUE) |> 
   modify_header(label ~ " ") %>%
   bold_labels() |> 
@@ -502,7 +560,7 @@ survfit(ff ~ meta  , data = ttx) |>
     xlab = "mois",
     ylab = "Survie (%)",
     break.x.by = 6,
-    xlim = c(0, 48),
+    xlim = c(0, 60),
     risk.table = TRUE,
  tables.height = 0.2,
  tables.theme = theme_cleantable()
@@ -546,16 +604,49 @@ survfit(ff ~ grade  , data = ttx) |>
 ```{r}
 #| label: pal
 
-zz <- table(tt$traitement)
-pzz <- prop.table(zz)*100
-zzn <- paste0(zz[[2]], " (",round(pzz[[2]],1),"%)")
+pal <- ttb |> 
+  group_by(traitement) |> 
+  summarise(n())
+zzn <- pal[[2,2]]
 
 ttb <- ttb |> 
-  filter(traitement != "Palliatif")
+  dplyr::filter(traitement != "Palliatif") 
 ```
 
 
-`r nrow(ttb)` patients n'ont pas été opérés soit `r round(100*nrow(tta)/nrow(tt),1)`%  de la population. Parmi ceux-ci, `r zzn` étaient considérés d’emblée comme en traitement palliatif. On exclu ces patients palliatifs.
+`r nrow(ttb)` patients n'ont pas été opérés soit `r round(100*nrow(ttb)/nrow(tt),1)`%  de la population. Parmi ceux-ci, `r zzn` étaient considérés d’emblée comme en traitement palliatif. On exclu ces patients palliatifs.
+
+```{r}
+#| label: tabchimnchir
+#| tbl-cap: Patients non chirurgiacux - Période
+zz <- table(ttb$chim)
+aa <- round(prop.table(zz)*100,1)
+zz <- cbind(zz,aa)
+colnames(zz) <- c("n","%")
+kbl(zz, booktabs = T) |> 
+  kable_styling(latex_options = c("HOLD_position"))
+```
+
+```{r}
+#| label: nchirdesc
+#| tbl-cap: Patients non chirurgicaux
+
+ttb |>
+  dplyr::select(3,4, 8:15,19:26,30,31,34) |>
+  tbl_summary(missing = "no", by = chim) |>
+  modify_header(label ~ " ") |>
+  bold_labels() |>
+  add_n() |>
+  add_p() |> 
+  bold_p() |> 
+  gexptabph(
+    lg = TRUE,
+    exp = expx,
+    nomfich = classeur,
+    nomsheet = "nchirdesc"
+  ) |> 
+   kable_styling(font_size = 8)
+```
 
 ```{r}
 #| label: courbepal1
@@ -582,7 +673,43 @@ ggsurvplot(
   surv.scale = "percent",
   xlab = "mois",
   ylab = "Survie (%)",
+  xlim = c(0,60),
   break.x.by = 12,
+  risk.table = TRUE,
+ tables.height = 0.2,
+ tables.theme = theme_cleantable()
+) 
+```
+
+```{r}
+#| label: courbepal2
+#| fig-cap: Courbes de survie -- Patients non chirurgicaux 
+#| fig-asp: 1
+
+  
+
+ff <- Surv(ttb$suivi, ttb$dcd)
+ffx <- survfit(ff ~ chim , data = ttb)
+ggsurvplot(
+  ffx,
+  data = ttb,
+  palette = "lancet",
+  pval = TRUE,
+  pval.coord = c(36,0.75),
+  ggtheme = theme_light(),
+  title = "Patients non chirurgicaux - ",
+  subtitle = "Courbe de survie",
+  surv.median.line = "hv",
+  conf.int = TRUE,
+      legend.title = "Période",
+    legend.labs = levels(ttb$chim),
+  legend = "top",
+  risk.table.title = "n",
+  surv.scale = "percent",
+  xlab = "mois",
+  ylab = "Survie (%)",
+  break.x.by = 12,
+  xlim = c(0,60),
   risk.table = TRUE,
  tables.height = 0.2,
  tables.theme = theme_cleantable()
@@ -596,10 +723,9 @@ On réalise une recherche de facteurs pronostics en incluant :
 
 - l'âge
 - la présence de métastase
-- le grade histologique
 - le nombre de ganglions envahis
 
-Les items T & N de la classification TNM n'a pas été retenus dans le modèle final. L'âge ne semble pas être lié au pronostic.
+Les items T & N de la classification TNM n'a pas été retenus dans le modèle final. L'âge ne semble pas être lié au pronostic. Le grade histologique n'a pu être analysé en raison d'un taux de remplissage trop faible dans les dossiers les plus anciens. 
 
 ```{r}
 #| label: coxnchir3
@@ -609,7 +735,7 @@ Les items T & N de la classification TNM n'a pas été retenus dans le modèle f
 ttb <- ttb |> 
   mutate(meta = if_else(metastase == "non", "Non", "Oui" ))
 ff <- Surv(ttb$suivi, ttb$dcd)
-coxph(ff ~ tranche.age + meta + grade + ganglions.envahis,  data = ttb) |> 
+coxph(ff ~ tranche.age + meta +  ganglions.envahis + chim,  data = ttb) |> 
   tbl_regression(exponentiate = TRUE) |> 
   modify_header(label ~ " ") %>%
   bold_labels() |> 
