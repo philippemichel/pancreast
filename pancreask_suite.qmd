@@ -1,0 +1,416 @@
+---
+title: "Cancer du Pancréas"
+subtitle: "Rapport statistique -- suite"
+author: 
+    - name: "Dr Philippe MICHEL"
+      affiliations:
+        name: "Hôpital NOVO"
+        department: "Unité de Soutien à la Recherche Clinique"
+format: 
+  titlepage-pdf:
+    titlepage: bg-image
+    titlepage-bg-image: "novo_usrc.png"
+    logo-space-after: "0\\baselineskip"
+    documentclass: scrreprt
+    classoption: ["oneside", "open=any, french"]
+    number-sections: true
+    titlepage-footer: "**Dr Nelson TRELLES** \\newline  Chirurgie viscérale -- Hôpital NOVO (Site Pontoise)\\newline \\newline Impact de l'évolution des recommandations des nouvelles chimiothérapies dans le pronostic de l'adénocarinome du pancréas\\newline Étude rétrospective sur registre\\newline \\today"
+titlepage-theme:
+    title-fontstyle: ["Huge", "bfseries"]
+    title-color: novo
+    subtitle-color: novo
+    subtitle-fontstyle: ["huge"]
+    logo-size: "0.2\\textheight"
+    vrule-width: "0.1cm"
+    vrule-color: novo
+include-in-header:
+      text: |
+        \usepackage{siunitx}
+        \definecolor{novo}{HTML}{27484b}
+jss-pdf:
+    keep-tex: true   
+pdf-engine: lualatex
+keep-tex: true
+number-sections: true
+toc: true
+lof: true
+lot: true
+mainfont: Faune
+mainfontoptions:
+  - Numbers=OldStyle
+  - Ligatures=TeX
+sansfont: Myriad Pro
+sansfontoptions:
+  - Ligatures=TeX
+fig-cap-location: bottom
+tbl-cap-location: top
+classoption: [french]
+papersize: a4paper
+editor: source
+bibliography: stat.bib
+cite-method: biblatex
+csl: jama.csl
+#reference-location: margin
+#citation-location: margin
+license: "MIT"
+echo: false
+warning: false
+message: false
+cache: false
+---
+
+```{r setup, include=FALSE}
+expx <- TRUE
+classeur <- "pancreasksuite.xls"
+fin <- 36
+```
+
+```{r}
+#| label: lib
+
+library(baseph)
+library(survminer)
+library(survival)
+library(janitor)
+library(corrplot)
+library(lubridate)
+library(Rcpp)
+library(xlsx)
+library(tidyverse)
+library(lubridate)
+library(labelled)
+library(kableExtra)
+library(forestmodel)
+library(epiDisplay)
+library(confintr)
+library(missMDA)
+library(colorspace)
+library(visdat)
+library(gtsummary)
+#
+# Écrivons les chiffres en français
+#
+theme_gtsummary_language(language = "fr", decimal.mark = ",", big.mark = " ")
+```
+
+
+```{r}
+ #| label: import
+
+rm(tt, ttz,tta, ttb)
+tt <-
+  read_csv2(
+    "datas/pancreas.csv",
+    na = c("NA", "nk", " ", "", "na", "nd","Hors departement"),
+    show_col_types = FALSE
+  ) |> 
+  mutate_if(is.character, as.factor)  |>
+  janitor::clean_names() |>
+  dplyr::filter(str_sub(histologie, 1, 14) == "adenocarcinome") |>
+  mutate(histologie = factor(histologie)) |>
+  mutate(across(starts_with("date"), dmy)) |>
+  mutate(suivi = as.numeric(date_dernieres_nouvelle - date_de_diagnostic) /
+           30.44) |>
+  mutate(dcd = if_else(decede == "oui", 1, 0)) |>
+  #  mutate(histologie = fct_lump(histologie, n = 5)) |>
+  dplyr::select(-code_anapath) |>
+  mutate(c_n = as.factor(c_n)) |>
+  mutate_at(vars(starts_with("ordre")), as.factor) |>
+  mutate(tranche_age = str_replace_all(tranche_age, "-", " à "))
+#
+names(tt) <- stringr::str_replace_all(names(tt), "_", ".")
+
+## Recodage de tt$tranche.age en tt$tranche.age
+tt$tranche.age <- tt$tranche.age |> 
+  fct_recode(
+    "20 à 29" = "20 à 24",
+    "20 à 29" = "25 à 29",
+    "30 à 39" = "30 à 34",
+    "30 à 39" = "35 à 39",
+    "40 à 49" = "40 à 44",
+    "40 à 49" = "45 à 49",
+    "50 à 59" = "50 à 54",
+    "50 à 59" = "55 à 59",
+    "60 à 69" = "60 à 64",
+    "60 à 69" = "65 à 69",
+    "70 à 79" = "70 à 74",
+    "70 à 79" = "75 à 79",
+    "80 et +" = "80 à 84",
+    "80 et +" = "85+"
+  )
+
+#
+## Réordonnancement de tt$metastase
+tt<- tt |> 
+  mutate(metastase =
+  fct_relevel(metastase,
+    "non",
+    "Foie",
+    "Carcinose ou pleuresie",
+    "Cerveau",
+    "Ganglion a distance",
+    "Os",
+    "Peau",
+    "poumon",
+    "surrenale",
+    "Multiple"
+  )) |> 
+  mutate(metastase = fct_lump(metastase, n = 5,  other_level = "Autre")) |> 
+  mutate(histologie  = fct_lump(histologie, n = 5,  other_level = "Autre"))
+
+
+## Recodage de tt$ganglions.envahis en tt$ganglions.envahis
+tt$gg <- cut(tt$ganglions.envahis,
+  include.lowest = TRUE,
+  right = FALSE,
+  dig.lab = 4,
+  breaks = c(0,1, 2, 8, 1000),
+  labels = c("0","1", "2-7", "8 et +")
+  
+)
+var_label(tt$gg) <- "Ganglions envahis"
+
+## Recodage de tta$grade en tta$grade_rec
+tt$grade_rec <- tt$grade %>%
+  fct_recode(
+    "G1" = "G1",
+    "G2" = "G2",
+    "G3 + G4" = "G3",
+    "G3 + G4" = "G4"
+  )
+
+var_label(tt$grade_rec) <- "Grade histologique"
+```
+
+\bigskip
+
+
+\bigskip
+
+```{r}
+#| label: traitdispo
+
+ttz <- tt |> 
+  dplyr::filter(traitement == "Oui")
+
+lgs <- which(ttz$suivi > fin)
+ttz$dcd[lgs] <- 0
+
+zz <- ttz |> 
+   group_by(chir) |> 
+   summarise(n())
+```
+
+
+```{r}
+#| label: groupes
+
+# Groupe chir
+
+dchim <- c("10/11/2001", "17/01/2007", "20/12/2018")
+dchim <- dmy(dchim)
+tta <- ttz |>
+  filter(chir == "oui") |> 
+  mutate(chim = "FOLFIRINOX")
+zz <- which(tta$date.de.diagnostic < dchim[3])
+tta$chim[zz] <-  "GEMZAR"
+zz <- which(tta$date.de.diagnostic < dchim[2])
+tta$chim[zz] <-  "5FU"
+zz <- which(tta$date.de.diagnostic < dchim[1])
+tta$chim[zz] <-  "Aucune"
+## Réordonnancement de tta$chim
+tta$chim <- tta$chim %>%
+  fct_relevel("Aucune", "5FU", "GEMZAR", "FOLFIRINOX")
+var_label(tta$chim) <- "Chimiothérapie"
+
+# groupnchir
+
+dchimn <- dmy("12/05/2011")
+ttb <- ttz |>
+  dplyr::filter(chir == "non") |>
+  mutate(chim = as.factor(if_else(
+    date.de.diagnostic < dchimn, "GEMZAR", "FOLFORINOX"
+  ))) |>
+  mutate(chim = fct_relevel(chim,
+                            "GEMZAR", "FOLFORINOX"))
+
+```
+
+# Non chir selon la période
+
+```{r}
+#| label: fignchirper
+#| fig-cap: Courbe de survie -- Patients non chirurgicaux selon la période
+#| fig-asp: 1
+
+ff <- Surv(ttb$suivi, ttb$dcd)
+ffx <- survfit(ff ~ chim , data = ttb)
+
+ggsurvplot(
+  ffx,
+  data = ttb,
+  palette = "lancet",
+  pval = TRUE,
+  pval.coord = c(20,0.75),
+  ggtheme = theme_light(),
+  title = "Patients non chirurgicaux selon la période",
+  subtitle = "Courbe de survie",
+  surv.median.line = "hv",
+  conf.int = TRUE,
+  legend.labs = c("GEMZAR", "FOLFORINOX"),
+  legend = "top",
+  legend.title = "Traitement ",
+  risk.table.title = "n",
+  surv.scale = "percent",
+  xlab = "mois",
+  ylab = "Survie (%)",
+  break.x.by = 12,
+  risk.table = TRUE,
+  xlim = c(0,fin),
+ tables.height = 0.2,
+ tables.theme = theme_cleantable()
+)
+```
+
+```{r}
+#| label: quartnchirper
+#| tbl-cap: Patients non chirurgicaux selon la période - Quartiles 
+
+zz <- quantile(ffx, na.rm = TRUE)$quantile
+zz |>
+  kbl(booktabs = TRUE) |>
+  kable_styling(latex_options = c("HOLD_position"))
+if (expx) {
+  zz |>
+    write.xlsx(classeur, sheetName = "quartnchirper", append = TRUE)
+}
+```
+
+
+# cT4 chirirugie d'emblée ou non
+
+```{r}
+#| label: t4chir
+#| fig-cap: Classification T4 - chirurgie d'emblée ou non
+
+ttq <- ttz |> 
+  filter(c.t != "4") |> 
+  mutate(oo = ifelse(ordre.chir ==1, "D'emblée", "Après tt néoadjuvant"))
+
+ff <- Surv(ttq$suivi, ttq$dcd)
+ffx <- survfit(ff ~ oo , data = ttq)
+
+ggsurvplot(
+  ffx,
+  data = ttq,
+  palette = "lancet",
+  pval = TRUE,
+  pval.coord = c(20,0.75),
+  ggtheme = theme_light(),
+  title = "Classification T4 - chirurgie d'emblée ou non",
+  subtitle = "Courbe de survie",
+  surv.median.line = "hv",
+  conf.int = TRUE,
+  legend.labs = c("Après tt néoadjuvant", "D'emblée"),
+  legend = "top",
+  legend.title = "Traitement ",
+  risk.table.title = "n",
+  surv.scale = "percent",
+  xlab = "mois",
+  ylab = "Survie (%)",
+  break.x.by = 12,
+  risk.table = TRUE,
+  xlim = c(0,fin),
+ tables.height = 0.2,
+ tables.theme = theme_cleantable()
+)
+```
+
+```{r}
+#| label: quartt4
+#| tbl-cap: Classification T4 - chirurgie d'emblée ou non - Quartiles 
+
+zz <- quantile(ffx, na.rm = TRUE)$quantile
+zz |>
+  kbl(booktabs = TRUE) |>
+  kable_styling(latex_options = c("HOLD_position"))
+if (expx) {
+  zz |>
+    write.xlsx(classeur, sheetName = "quartt4", append = TRUE)
+}
+```
+
+
+# Survie des patients chirurgicaux selon la chimio
+
+
+```{r}
+#| label: quartchirchim
+#| tbl-cap: survie des patients chirurgicaux ou non - Quartiles 
+
+ff <- Surv(tta$suivi, tta$dcd)
+ffx <- survfit(ff ~ chim , data = tta)
+
+zz <- quantile(ffx, na.rm = TRUE)$quantile
+zz |>
+  kbl(booktabs = TRUE) |>
+  kable_styling(latex_options = c("HOLD_position"))
+if (expx) {
+  zz |>
+    write.xlsx(classeur, sheetName = "quartchirchim", append = TRUE)
+}
+```
+
+
+# Métastases & chimio
+
+```{r}
+#| label: Metachimiofig
+#| fig-cap: Courbe de survie -- Patients chirurgicaux M+ selon la période
+#| fig-asp: 1
+
+ttq <- tta |> 
+  filter(metastase != "non")
+
+ff <- Surv(ttq$suivi, ttq$dcd)
+ffx <- survfit(ff ~ chim , data = ttq)
+
+ggsurvplot(
+  ffx,
+  data = ttq,
+  palette = "lancet",
+  pval = TRUE,
+  pval.coord = c(20,0.75),
+  ggtheme = theme_light(),
+  title = "Courbe de survie -- Patients chirurgicaux M+ selon la période",
+  subtitle = "Courbe de survie",
+  surv.median.line = "hv",
+  conf.int = FALSE,
+  legend.labs = levels(ttq$chim),
+  legend = "top",
+  legend.title = "Traitement ",
+  risk.table.title = "n",
+  surv.scale = "percent",
+  xlab = "mois",
+  ylab = "Survie (%)",
+  break.x.by = 12,
+  risk.table = TRUE,
+  xlim = c(0,fin),
+ tables.height = 0.2,
+ tables.theme = theme_cleantable()
+)
+```
+
+```{r}
+#| label: Metachimiotab
+#| tbl-cap: Patients non chirurgicaux selon la période - Quartiles 
+
+zz <- quantile(ffx, na.rm = TRUE)$quantile
+zz |>
+  kbl(booktabs = TRUE) |>
+  kable_styling(latex_options = c("HOLD_position"))
+if (expx) {
+  zz |>
+    write.xlsx(classeur, sheetName = "quartmetachimio", append = TRUE)
+}
+```
