@@ -1,6 +1,6 @@
 ---
 title: "Cancer du Pancréas"
-subtitle: "Rapport statistique -- suite"
+subtitle: "Rapport statistique -- suite 2"
 author: 
     - name: "Dr Philippe MICHEL"
       affiliations:
@@ -60,8 +60,8 @@ cache: false
 ---
 
 ```{r setup, include=FALSE}
-expx <- TRUE
-classeur <- "pancreasksuite.xls"
+expx <- FALSE
+classeur <- "pancreasksuite2.xls"
 fin <- 36
 ```
 
@@ -287,7 +287,7 @@ if (expx) {
 ```
 
 
-# cT4 chirirugie d'emblée ou non
+# cT4 chirrugie d'emblée ou non
 
 ```{r}
 #| label: t4chir
@@ -346,7 +346,7 @@ if (expx) {
 
 ```{r}
 #| label: quartchirchim
-#| tbl-cap: survie des patients chirurgicaux ou non - Quartiles 
+#| tbl-cap: survie des patients chirurgicaux - Quartiles 
 
 ff <- Surv(tta$suivi, tta$dcd)
 ffx <- survfit(ff ~ chim , data = tta)
@@ -403,7 +403,7 @@ ggsurvplot(
 
 ```{r}
 #| label: Metachimiotab
-#| tbl-cap: Patients non chirurgicaux selon la période - Quartiles 
+#| tbl-cap: Patients chirurgicaux selon la période - Quartiles 
 
 zz <- quantile(ffx, na.rm = TRUE)$quantile
 zz |>
@@ -412,5 +412,104 @@ zz |>
 if (expx) {
   zz |>
     write.xlsx(classeur, sheetName = "quartmetachimio", append = TRUE)
+}
+```
+
+
+```{r}
+#| label: Metachimiofig2
+#| fig-cap: Courbe de survie -- Patients chirurgicaux M+  GEMZAR vsFOLFIRINOX
+#| fig-asp: 1
+
+ttq <- tta |> 
+  filter(metastase != "non") |> 
+  filter(chim %in% c("GEMZAR", "FOLFIRINOX")) |> 
+  mutate((chim = factor(chim)))
+  
+
+ff <- Surv(ttq$suivi, ttq$dcd)
+ffx <- survfit(ff ~ chim , data = ttq)
+
+ggsurvplot(
+  ffx,
+  data = ttq,
+  palette = "lancet",
+  pval = TRUE,
+  pval.coord = c(20,0.75),
+  ggtheme = theme_light(),
+  title = "Courbe de survie -- Patients chirurgicaux M+  GEMZAR vsFOLFIRINOX",
+  subtitle = "Courbe de survie",
+  surv.median.line = "hv",
+  conf.int = FALSE,
+  legend.labs = c("GEMZAR", "FOLFIRINOX"),
+  legend = "top",
+  legend.title = "Traitement ",
+  risk.table.title = "n",
+  surv.scale = "percent",
+  xlab = "mois",
+  ylab = "Survie (%)",
+  break.x.by = 12,
+  risk.table = TRUE,
+  xlim = c(0,fin),
+ tables.height = 0.2,
+ tables.theme = theme_cleantable()
+)
+```
+
+Pas assez de cas pour conclure de manière franche.
+
+
+# Traitement néoadjuvant ou non, tous patients
+
+```{r}
+#| label: neoadjchimiofig
+#| fig-cap: Courbe de survie -- Traitement néo-adjuvant ou non
+#| fig-asp: 1
+
+ttq <- ttz |> 
+  mutate(oo = ifelse(ordre.chir ==1, "D'emblée", "Après tt néoadjuvant"))
+
+ff <- Surv(ttq$suivi, ttq$dcd)
+ffx <- survfit(ff ~ oo , data = ttq)
+
+ggsurvplot(
+  ffx,
+  data = ttq,
+  palette = "lancet",
+  pval = TRUE,
+  pval.coord = c(20,0.75),
+  ggtheme = theme_light(),
+  title = "Traitement néo-adjuvant ou non",
+  subtitle = "Courbe de survie",
+  surv.median.line = "hv",
+  conf.int = FALSE,
+ # legend.labs = levels(ttq$chim),
+  legend = "top",
+  legend.title = "Traitement ",
+  risk.table.title = "n",
+  surv.scale = "percent",
+  xlab = "mois",
+  ylab = "Survie (%)",
+  break.x.by = 12,
+  risk.table = TRUE,
+  xlim = c(0,fin),
+ tables.height = 0.2,
+ tables.theme = theme_cleantable()
+)
+```
+
+
+
+```{r}
+#| label: chirneo
+#| tbl-cap: Traitement néo-adjuvant ou non - Quartiles 
+
+zz <- quantile(ffx, na.rm = TRUE)$quantile
+zz |>
+  kbl(booktabs = TRUE) |>
+  kable_styling(latex_options = c("HOLD_position"))
+if (expx) {
+  zz |>
+    write.xlsx(classeur, sheetName = "quartchirneo", append = TRUE)
 }
 ```
